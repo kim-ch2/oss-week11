@@ -15,6 +15,12 @@ import express from "express";
 import { getDaily } from "./openMeteo.js";
 import { toDays } from "./public/logic.js";
 
+// P6: 토큰이 없으면 바로 멈춤
+if (!process.env.ADMIN_TOKEN) {
+  console.error("ADMIN_TOKEN is not set. Copy .env.example to .env.");
+  process.exit(1);
+}
+
 const app = express();
 const port = process.env.PORT ?? 3000;
 
@@ -23,6 +29,9 @@ const CITIES = {
   daejeon: { name: "Daejeon", lat: 36.3504, lon: 127.3845 },
   gangneung: { name: "Gangneung", lat: 37.7519, lon: 128.8761 },
 };
+
+// P6: 도시 키별 요청 횟수 (메모리에만 있음)
+const counts = {};
 
 app.use(express.static("public"));
 
@@ -36,6 +45,7 @@ app.get("/api/forecast", async (req, res) => {
   if (!Object.hasOwn(CITIES, key)) {
     return res.status(400).json({ error: `Unknown city: ${key}` });
   }
+  counts[key] = (counts[key] ?? 0) + 1; // 아는 도시 확인 직후, Open-Meteo 부르기 전
   const city = CITIES[key];
   try {
     const days = toDays(await getDaily(city));
@@ -43,6 +53,14 @@ app.get("/api/forecast", async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// GET /api/stats — Authorization: Bearer <ADMIN_TOKEN> 이 있어야 함
+app.get("/api/stats", (req, res) => {
+  if (req.get("Authorization") !== `Bearer ${process.env.ADMIN_TOKEN}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json(counts);
 });
 
 app.listen(port, (error) => {
